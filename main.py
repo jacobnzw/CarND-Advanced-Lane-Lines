@@ -44,7 +44,7 @@ def distortion_coefficients():
     # calculate camera matrix and distortion coefficient
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(obj_points, img_points, img.shape[::-1], None, None)
 
-    return mtx, dist, corners
+    return mtx, dist
 
 
 def undistortion_test():
@@ -61,16 +61,44 @@ def undistortion_test():
     plt.show()
 
 
-# correct for camera lens distortion
+def region_of_interest_test():
+    # load up a test image of the road
+    dir_list = os.listdir(TEST_DIR)
+    img = cv2.imread(os.path.join(TEST_DIR, dir_list[0]))
+    # place down vertices defining a polygon
+    pts = np.array([[230, 650], [1090, 650], [720, 450], [560, 450]], np.int32)
+    cv2.polylines(img, [pts], True, [0, 0, 255], thickness=2)
+    # draw polygon in the image to check if you like them as source pts for perspective transformation
+    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    plt.show()
+
+
+# region_of_interest_test()
+
+# load an image
+dir_list = os.listdir(TEST_DIR)
+img = cv2.imread(os.path.join(TEST_DIR, dir_list[0]))
+
+# correct for lens distortion
+camera_mat, dist_coeff = distortion_coefficients()
+img = cv2.undistort(img, camera_mat, dist_coeff, None, camera_mat)
 
 # TODO: perspective transformation
 # source points and destination points must match each other; src[0] --> dst[0]
 # each point has coordinates [x, y], where img.shape = (y, x)
-src = []  # points in the image (e.g. corners of chessboard, vertices of a rectangle marking the lane etc.)
-dst = []  # points with desired coordinates in the destination image
+# points in the image (e.g. corners of chessboard, vertices of a rectangle marking the lane etc.)
+src = np.array([[230, 660], [1090, 660], [720, 450], [560, 450]], np.float32)
+# points with desired coordinates in the destination image
+dst = np.array([[230, img.shape[0]], [1090, img.shape[0]], [1090, 0], [230, 0]], np.float32)
 trans_mat = cv2.getPerspectiveTransform(src, dst)
-trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
-warped = cv2.warpPerspective(src, trans_mat, img.shape[::-1], flags=cv2.INTER_LINEAR)
+# trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
+warped = cv2.warpPerspective(img, trans_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+
+fig, ax = plt.subplots(2, 1)
+ax[0].imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+ax[1].imshow(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
+plt.show()
+
 
 # TODO: HSV, HSL, gradient thresholding
 # TODO: lane pixel identification
