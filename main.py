@@ -61,15 +61,22 @@ def undistortion_test():
     plt.show()
 
 
-def region_of_interest_test():
-    # load up a test image of the road
-    dir_list = os.listdir(TEST_DIR)
-    img = cv2.imread(os.path.join(TEST_DIR, dir_list[0]))
-    # place down vertices defining a polygon
-    pts = np.array([[230, 650], [1090, 650], [720, 450], [560, 450]], np.int32)
-    cv2.polylines(img, [pts], True, [0, 0, 255], thickness=2)
-    # draw polygon in the image to check if you like them as source pts for perspective transformation
-    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+def perspective_transform_test():
+    # points in the image (e.g. corners of chessboard, vertices of a rectangle marking the lane etc.)
+    src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
+    # points with desired coordinates in the destination image
+    dst = np.array([[305, img.shape[0]], [1000, img.shape[0]], [1000, 0], [305, 0]], np.float32)
+    trans_mat = cv2.getPerspectiveTransform(src, dst)
+    # trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
+    cv2.polylines(img, [src.astype(np.int32)], True, [0, 0, 255], thickness=2)
+    warped = cv2.warpPerspective(img, trans_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+
+    cv2.polylines(img, [src.astype(np.int32)], True, [0, 0, 255], thickness=2)
+    cv2.polylines(warped, [dst.astype(np.int32)], True, [0, 255, 0], thickness=4)
+
+    fig, ax = plt.subplots(2, 1)
+    ax[0].imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    ax[1].imshow(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
     plt.show()
 
 
@@ -77,28 +84,35 @@ def region_of_interest_test():
 
 # load an image
 dir_list = os.listdir(TEST_DIR)
-img = cv2.imread(os.path.join(TEST_DIR, dir_list[0]))
+img = cv2.imread(os.path.join(TEST_DIR, dir_list[2]))
 
 # correct for lens distortion
 camera_mat, dist_coeff = distortion_coefficients()
 img = cv2.undistort(img, camera_mat, dist_coeff, None, camera_mat)
 
-# TODO: perspective transformation
-# source points and destination points must match each other; src[0] --> dst[0]
-# each point has coordinates [x, y], where img.shape = (y, x)
-# points in the image (e.g. corners of chessboard, vertices of a rectangle marking the lane etc.)
-src = np.array([[230, 660], [1090, 660], [720, 450], [560, 450]], np.float32)
-# points with desired coordinates in the destination image
-dst = np.array([[230, img.shape[0]], [1090, img.shape[0]], [1090, 0], [230, 0]], np.float32)
+src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
+dst = np.array([[305, img.shape[0]], [1000, img.shape[0]], [1000, 0], [305, 0]], np.float32)
 trans_mat = cv2.getPerspectiveTransform(src, dst)
-# trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
+trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
+
 warped = cv2.warpPerspective(img, trans_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
 
-fig, ax = plt.subplots(2, 1)
-ax[0].imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-ax[1].imshow(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
+# what channel is best for thresholding out lanes, also Sobel gradients should be considered.
+img_hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
+fig, ax = plt.subplots(1, 3)
+title_str = ['Hue', 'Luminance', 'Saturation']
+for i in range(3):
+    ax[i].set_title(title_str[i])
+    ax[i].imshow(img_hls[..., i])
 plt.show()
 
+img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+fig, ax = plt.subplots(1, 3)
+title_str = ['Hue', 'Saturation', 'Value']
+for i in range(3):
+    ax[i].set_title(title_str[i])
+    ax[i].imshow(img_hsv[..., i])
+plt.show()
 
 # TODO: HSV, HSL, gradient thresholding
 # TODO: lane pixel identification
