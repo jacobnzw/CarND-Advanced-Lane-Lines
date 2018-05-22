@@ -84,29 +84,37 @@ def perspective_transform_test():
 
 # load an image
 dir_list = os.listdir(TEST_DIR)
-img = cv2.imread(os.path.join(TEST_DIR, dir_list[2]))
+img = cv2.imread(os.path.join(TEST_DIR, dir_list[1]))
 
 # correct for lens distortion
 camera_mat, dist_coeff = distortion_coefficients()
 img = cv2.undistort(img, camera_mat, dist_coeff, None, camera_mat)
 
-src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
-dst = np.array([[305, img.shape[0]], [1000, img.shape[0]], [1000, 0], [305, 0]], np.float32)
-trans_mat = cv2.getPerspectiveTransform(src, dst)
-trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
+# TODO: make function for HSV, HSL, gradient thresholding
 
-warped = cv2.warpPerspective(img, trans_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
-
-# what channel is best for thresholding out lanes, also Sobel gradients should be considered.
-img_hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
-fig, ax = plt.subplots(1, 3)
-title_str = ['Hue', 'Luminance', 'Saturation']
-for i in range(3):
-    ax[i].set_title(title_str[i])
-    ax[i].imshow(img_hls[..., i])
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+# compute gradients in x and y directions
+sobel_y = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 0, 1))
+sobel_x = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 1, 0))
+# scale to 0 - 255 and unsigned 8-bit integer type
+sobel_y = np.uint8(255 * sobel_y / np.max(sobel_y))
+sobel_x = np.uint8(255 * sobel_x / np.max(sobel_x))
+plt.imshow(np.logical_and(sobel_y >= 100, sobel_y <= 255), cmap='gray')
 plt.show()
 
+# # what channel is best for thresholding out lanes, also Sobel gradients should be considered.
+# img_hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
+# plt.plot(img_hls[..., 2])
+# fig, ax = plt.subplots(1, 3)
+# title_str = ['Hue', 'Luminance', 'Saturation']
+# for i in range(3):
+#     ax[i].set_title(title_str[i])
+#     ax[i].imshow(img_hls[..., i])
+# plt.show()
+
 img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+plt.imshow(img_hsv[..., 2] > 245)
+plt.show()
 fig, ax = plt.subplots(1, 3)
 title_str = ['Hue', 'Saturation', 'Value']
 for i in range(3):
@@ -114,7 +122,14 @@ for i in range(3):
     ax[i].imshow(img_hsv[..., i])
 plt.show()
 
-# TODO: HSV, HSL, gradient thresholding
+# # apply perspective transform
+# src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
+# dst = np.array([[305, img.shape[0]], [1000, img.shape[0]], [1000, 0], [305, 0]], np.float32)
+# trans_mat = cv2.getPerspectiveTransform(src, dst)
+# trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
+# warped = cv2.warpPerspective(img, trans_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+
+
 # TODO: lane pixel identification
 # TODO: fit curve through the lane pixels
 # TODO: compute curvature
