@@ -243,6 +243,7 @@ def radius_of_curvature(left_lane_pixels, right_lane_pixels, y0):
 # load an image
 dir_list = os.listdir(TEST_DIR)
 img = cv2.imread(os.path.join(TEST_DIR, dir_list[3]))
+im_in = img.copy()
 
 # correct for lens distortion
 camera_mat, dist_coeff = distortion_coefficients()
@@ -294,8 +295,19 @@ plt.xlim(0, 1280)
 plt.ylim(720, 0)
 plt.show()
 
+
+img_in_warped = cv2.warpPerspective(im_in, trans_mat, im_in.shape[1::-1])
+right_lane_points = np.vstack((right_fitx, ploty)).T.astype(np.int32)
+left_lane_points = np.vstack((left_fitx, ploty)).T.astype(np.int32)
+
+cv2.polylines(img_in_warped, [left_lane_points, right_lane_points], False, [255, 0, 0], thickness=20)
+fig, ax = plt.subplots(2, 1)
+ax[0].imshow(img_in_warped)
+ax[1].imshow(cv2.warpPerspective(img_in_warped, trans_mat_inverse, img_in_warped.shape[1::-1]))
+plt.show()
+
 # TODO: compute curvature
-left_rad, right_rad = radius_of_curvature(left_pix, right_pix, img.shape[0])
-print('Left ROC: {:.2f} m\nRight ROC: {:.2f} m'.format(left_rad, right_rad))
+# left_rad, right_rad = radius_of_curvature(left_pix, right_pix, img.shape[0])
+# print('Left ROC: {:.2f} m\nRight ROC: {:.2f} m'.format(left_rad, right_rad))
 
 # TODO: inverse perspective transformation
