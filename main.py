@@ -127,27 +127,117 @@ def thresholding(img_bgr):
     return img_thresh
 
 
-def polyfit_lane_parallel(left_x, left_y, right_x, right_y, lane_width):
-    """
-    Fit two second-degree polynomials using pixels from the left and right lanes, such that the quadratic and linear
-    terms are equal. The resulting polynomials only differ in the absolute term.
+def lane_pixels(img_bin):
+    histogram = np.sum(img_bin[img_bin.shape[0] // 2:, :], axis=0)
 
-    Returns
-    -------
+    # # Create an output image to draw on and  visualize the result
+    # out_img = np.dstack((img_bin, img_bin, img_bin)) * 255
 
-    """
+    # Find the peak of the left and right halves of the histogram
+    # These will be the starting point for the left and right lines
+    midpoint = np.int(histogram.shape[0] // 2)
+    leftx_base = np.argmax(histogram[:midpoint])
+    rightx_base = np.argmax(histogram[midpoint:]) + midpoint
 
-    right_x -= lane_width
-    theta_left = np.polyfit(np.concatenate((left_y, right_y)), np.concatenate((left_x, right_x)), 2)
+    # Choose the number of sliding windows
+    nwindows = 9
+    # Set height of windows
+    window_height = np.int(img_bin.shape[0] // nwindows)
+    # Identify the x and y positions of all nonzero pixels in the image
+    nonzero = img_bin.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
+    # Current positions to be updated for each window
+    leftx_current = leftx_base
+    rightx_current = rightx_base
+    # Set the width of the windows +/- margin
+    margin = 100
+    # Set minimum number of pixels found to recenter window
+    minpix = 50
+    # Create empty lists to receive left and right lane pixel indices
+    left_lane_inds = []
+    right_lane_inds = []
 
-    theta_right = theta_left.copy()
-    theta_right[-1] += lane_width
+    # Step through the windows one by one
+    for window in range(nwindows):
+        # Identify window boundaries in x and y (and right and left)
+        win_y_low = img_bin.shape[0] - (window + 1) * window_height
+        win_y_high = img_bin.shape[0] - window * window_height
+        win_xleft_low = leftx_current - margin
+        win_xleft_high = leftx_current + margin
+        win_xright_low = rightx_current - margin
+        win_xright_high = rightx_current + margin
+        # # Draw the windows on the visualization image
+        # cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
+        # cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
+        # Identify the nonzero pixels in x and y within the window
+        good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+                          (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
+        good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+                           (nonzerox >= win_xright_low) & (nonzerox < win_xright_high)).nonzero()[0]
+        # Append these indices to the lists
+        left_lane_inds.append(good_left_inds)
+        right_lane_inds.append(good_right_inds)
+        # If you found > minpix pixels, recenter next window on their mean position
+        if len(good_left_inds) > minpix:
+            leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
+        if len(good_right_inds) > minpix:
+            rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
+
+    # Concatenate the arrays of indices
+    left_lane_inds = np.concatenate(left_lane_inds)
+    right_lane_inds = np.concatenate(right_lane_inds)
+
+    # Extract left and right line pixel positions
+    leftx = nonzerox[left_lane_inds]
+    lefty = nonzeroy[left_lane_inds]
+    rightx = nonzerox[right_lane_inds]
+    righty = nonzeroy[right_lane_inds]
+
+    return (leftx, lefty), (rightx, righty), (nonzerox, nonzeroy), (left_lane_inds, right_lane_inds)
+
+
+def lane_curve_fit(left_lane_pixels, right_lane_pixels, method='pf_ind'):
+    leftx, lefty = left_lane_pixels[0], left_lane_pixels[1]
+    rightx, righty = right_lane_pixels[0], right_lane_pixels[1]
+
+    if method == 'pf_ind':  # independent quadratic polynomials
+        # Fit a second order polynomial to each
+        theta_left = np.polyfit(lefty, leftx, 2)
+        theta_right = np.polyfit(righty, rightx, 2)
+    elif method == 'pf_avg':  # quadratic polynomials with averaged 1st and 2nd order coefficients
+        theta_left = np.polyfit(lefty, leftx, 2)
+        theta_right = np.polyfit(righty, rightx, 2)
+        # lanes are parallel, hence all polynomial coefficients, except the absolute term, should be the same
+        avg_fit = np.array([np.mean(a) for a in list(zip(theta_left, theta_right))])
+        theta_left[:2], theta_right[:2] = avg_fit[:2], avg_fit[:2]
+    elif method == 'pf_joint':
+        # Fit two second-degree polynomials using pixels from the left and right lanes, such that the quadratic and
+        # linear terms are equal. The resulting polynomials only differ in the absolute term.
+        lane_width = 700  # rightx_base - leftx_base
+        rightx -= lane_width
+        theta_left = np.polyfit(np.concatenate((lefty, righty)), np.concatenate((leftx, rightx)), 2)
+        theta_right = theta_left.copy()
+        theta_right[-1] += lane_width
+    else:
+        print('Uknown curve fitting method specified.')
 
     return theta_left, theta_right
 
 
-def radius_of_curvature(y):
-    pass
+def radius_of_curvature(left_lane_pixels, right_lane_pixels, y0):
+    leftx, lefty = left_lane_pixels[0], left_lane_pixels[1]
+    rightx, righty = right_lane_pixels[0], right_lane_pixels[1]
+
+    # fit in the world coordinates
+    theta_left = np.polyfit(lefty * YM_PER_PIX, leftx * XM_PER_PIX, 2)
+    theta_right = np.polyfit(righty * YM_PER_PIX, rightx * XM_PER_PIX, 2)
+
+    # point where the curvature is evaluated; lane fit is x = f(y)
+    left_roc = (1 + (2 * theta_left[0] * y0 * YM_PER_PIX + theta_left[1]) ** 2) ** 1.5 / np.abs(2 * theta_left[0])
+    right_roc = (1 + (2 * theta_right[0] * y0 * YM_PER_PIX + theta_right[1]) ** 2) ** 1.5 / np.abs(2 * theta_right[0])
+
+    return left_roc, right_roc
 
 
 # load an image
@@ -166,8 +256,8 @@ img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
 # gradient and color thresholding
 img = thresholding(img)
 
-plt.imshow(img, cmap='gray')
-plt.show()
+# plt.imshow(img, cmap='gray')
+# plt.show()
 
 # apply perspective transform
 src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
@@ -176,104 +266,36 @@ trans_mat = cv2.getPerspectiveTransform(src, dst)
 trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
 img = cv2.warpPerspective(np.uint8(img), trans_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
 
-plt.imshow(img, cmap='gray')
-plt.show()
+# plt.imshow(img, cmap='gray')
+# plt.show()
 
-# TODO: lane pixel identification# TODO: fit curve through the lane pixels
-histogram = np.sum(img[img.shape[0]/2:, :], axis=0)
-# Create an output image to draw on and  visualize the result
-out_img = np.dstack((img, img, img))*255
-# Find the peak of the left and right halves of the histogram
-# These will be the starting point for the left and right lines
-midpoint = np.int(histogram.shape[0]//2)
-leftx_base = np.argmax(histogram[:midpoint])
-rightx_base = np.argmax(histogram[midpoint:]) + midpoint
+# find lane pixels
+left_pix, right_pix, nonzero_pix, lane_pix_ind = lane_pixels(img)
 
-# Choose the number of sliding windows
-nwindows = 9
-# Set height of windows
-window_height = np.int(img.shape[0]//nwindows)
-# Identify the x and y positions of all nonzero pixels in the image
-nonzero = img.nonzero()
-nonzeroy = np.array(nonzero[0])
-nonzerox = np.array(nonzero[1])
-# Current positions to be updated for each window
-leftx_current = leftx_base
-rightx_current = rightx_base
-# Set the width of the windows +/- margin
-margin = 100
-# Set minimum number of pixels found to recenter window
-minpix = 50
-# Create empty lists to receive left and right lane pixel indices
-left_lane_inds = []
-right_lane_inds = []
+# fit a curve through the lane pixels
+left_fit, right_fit = lane_curve_fit(left_pix, right_pix)
 
-# Step through the windows one by one
-for window in range(nwindows):
-    # Identify window boundaries in x and y (and right and left)
-    win_y_low = img.shape[0] - (window+1)*window_height
-    win_y_high = img.shape[0] - window*window_height
-    win_xleft_low = leftx_current - margin
-    win_xleft_high = leftx_current + margin
-    win_xright_low = rightx_current - margin
-    win_xright_high = rightx_current + margin
-    # Draw the windows on the visualization image
-    cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
-    cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
-    # Identify the nonzero pixels in x and y within the window
-    good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
-                      (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
-    good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
-                       (nonzerox >= win_xright_low) & (nonzerox < win_xright_high)).nonzero()[0]
-    # Append these indices to the lists
-    left_lane_inds.append(good_left_inds)
-    right_lane_inds.append(good_right_inds)
-    # If you found > minpix pixels, recenter next window on their mean position
-    if len(good_left_inds) > minpix:
-        leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
-    if len(good_right_inds) > minpix:
-        rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
-
-# Concatenate the arrays of indices
-left_lane_inds = np.concatenate(left_lane_inds)
-right_lane_inds = np.concatenate(right_lane_inds)
-
-# Extract left and right line pixel positions
-leftx = nonzerox[left_lane_inds]
-lefty = nonzeroy[left_lane_inds]
-rightx = nonzerox[right_lane_inds]
-righty = nonzeroy[right_lane_inds]
-
-# TODO: fit curve through the lane pixels
-# Fit a second order polynomial to each
-left_fit = np.polyfit(lefty, leftx, 2)
-right_fit = np.polyfit(righty, rightx, 2)
-
-# # lanes are parallel, hence all polynomial coefficients, except the absolute term, should be the same
-# avg_fit = np.array([np.mean(a) for a in list(zip(left_fit, right_fit))])
-# left_fit[:2], right_fit[:2] = avg_fit[:2], avg_fit[:2]
-
-# # different parallel lane fit
-# lane_width = rightx_base - leftx_base
-# left_fit, right_fit = polyfit_lane_parallel(leftx, lefty, rightx, righty, lane_width)
-
+# TODO: mark lanes graphically in the image
 # Generate x and y values for plotting
-ploty = np.linspace(0, img.shape[0]-1, img.shape[0])
+ploty = np.arange(0, img.shape[0])
 left_fitx = np.polyval(left_fit, ploty)
 right_fitx = np.polyval(right_fit, ploty)
 
+out_img = np.dstack((img, img, img)) * 255
+left_lane_inds, right_lane_inds = lane_pix_ind[0], lane_pix_ind[1]
+nonzerox, nonzeroy = nonzero_pix[0], nonzero_pix[1]
 out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
 out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
 plt.imshow(out_img)
 plt.plot(left_fitx, ploty, color='yellow')
 plt.plot(right_fitx, ploty, color='yellow')
+plt.plot(right_fitx, ploty, color='green', lw=20, alpha=0.5)
 plt.xlim(0, 1280)
 plt.ylim(720, 0)
 plt.show()
 
 # TODO: compute curvature
-# radius of curvature
-curvature_radius = radius_of_curvature()
+left_rad, right_rad = radius_of_curvature(left_pix, right_pix, img.shape[0])
+print('Left ROC: {:.2f} m\nRight ROC: {:.2f} m'.format(left_rad, right_rad))
 
 # TODO: inverse perspective transformation
-# TODO: mark lanes graphically
