@@ -243,7 +243,7 @@ def radius_of_curvature(left_lane_pixels, right_lane_pixels, y0):
 # load an image
 dir_list = os.listdir(TEST_DIR)
 img = cv2.imread(os.path.join(TEST_DIR, dir_list[3]))
-im_in = img.copy()
+img_in = img.copy()
 
 # correct for lens distortion
 camera_mat, dist_coeff = distortion_coefficients()
@@ -276,34 +276,42 @@ left_pix, right_pix, nonzero_pix, lane_pix_ind = lane_pixels(img)
 # fit a curve through the lane pixels
 left_fit, right_fit = lane_curve_fit(left_pix, right_pix)
 
+
 # TODO: mark lanes graphically in the image
 # Generate x and y values for plotting
 ploty = np.arange(0, img.shape[0])
 left_fitx = np.polyval(left_fit, ploty)
 right_fitx = np.polyval(right_fit, ploty)
 
-out_img = np.dstack((img, img, img)) * 255
-left_lane_inds, right_lane_inds = lane_pix_ind[0], lane_pix_ind[1]
-nonzerox, nonzeroy = nonzero_pix[0], nonzero_pix[1]
-out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
-plt.imshow(out_img)
-plt.plot(left_fitx, ploty, color='yellow')
-plt.plot(right_fitx, ploty, color='yellow')
-plt.plot(right_fitx, ploty, color='green', lw=20, alpha=0.5)
-plt.xlim(0, 1280)
-plt.ylim(720, 0)
-plt.show()
+# out_img = np.dstack((img, img, img)) * 255
+# left_lane_inds, right_lane_inds = lane_pix_ind[0], lane_pix_ind[1]
+# nonzerox, nonzeroy = nonzero_pix[0], nonzero_pix[1]
+# out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+# out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+# plt.imshow(out_img)
+# plt.plot(left_fitx, ploty, color='yellow')
+# plt.plot(right_fitx, ploty, color='yellow')
+# plt.plot(right_fitx, ploty, color='green', lw=20, alpha=0.5)
+# plt.xlim(0, 1280)
+# plt.ylim(720, 0)
+# plt.show()
 
 
-img_in_warped = cv2.warpPerspective(im_in, trans_mat, im_in.shape[1::-1])
+img_in_warped = cv2.warpPerspective(img_in, trans_mat, img_in.shape[1::-1])
 right_lane_points = np.vstack((right_fitx, ploty)).T.astype(np.int32)
 left_lane_points = np.vstack((left_fitx, ploty)).T.astype(np.int32)
 
-cv2.polylines(img_in_warped, [left_lane_points, right_lane_points], False, [255, 0, 0], thickness=20)
+img_in_warped_lanes = img_in_warped.copy()
+cv2.polylines(img_in_warped_lanes, [left_lane_points, right_lane_points], False, [0, 0, 255], thickness=30)
+cv2.fillPoly(img_in_warped_lanes, [left_lane_points, right_lane_points], [0, 128, 0])
+
 fig, ax = plt.subplots(2, 1)
-ax[0].imshow(img_in_warped)
-ax[1].imshow(cv2.warpPerspective(img_in_warped, trans_mat_inverse, img_in_warped.shape[1::-1]))
+ax[0].imshow(cv2.cvtColor(img_in_warped, cv2.COLOR_BGR2RGB))
+img_out = cv2.warpPerspective(img_in_warped, trans_mat_inverse, img_in_warped.shape[1::-1])
+img_in_warped_lanes = cv2.warpPerspective(img_in_warped_lanes, trans_mat_inverse, img_in_warped_lanes.shape[1::-1])
+img_out = cv2.addWeighted(img_in, 1.0, img_out, -1.0, 0.0)
+img_out = cv2.addWeighted(img_out, 1.0, img_in_warped_lanes, 1.0, 0.0)
+ax[1].imshow(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB))
 plt.show()
 
 # TODO: compute curvature
