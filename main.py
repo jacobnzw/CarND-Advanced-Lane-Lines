@@ -240,6 +240,42 @@ def radius_of_curvature(left_lane_pixels, right_lane_pixels, y0):
     return left_roc, right_roc
 
 
+def draw_telemetry(img_bgr, left_lane_fit, right_lane_fit):
+    # compute curvature
+    left_rad, right_rad = radius_of_curvature(left_pix, right_pix, img_bgr.shape[0])
+
+    # Generate x and y values for plotting
+    ploty = np.arange(0, img_bgr.shape[0])
+    left_fitx = np.polyval(left_lane_fit, ploty)
+    right_fitx = np.polyval(right_lane_fit, ploty)
+
+    # compute car offset
+    camera_center = (right_fitx[-1] + left_fitx[-1]) / 2
+    car_offset = (camera_center - img_bgr.shape[1] / 2) * XM_PER_PIX
+
+    right_lane_points = np.vstack((right_fitx, ploty)).T.astype(np.int32)
+    left_lane_points = np.vstack((left_fitx, ploty)).T.astype(np.int32)
+    # draw detected lanes on a blank image (top view)
+    img_out = np.zeros_like(img_bgr, dtype=np.uint8)
+    cv2.polylines(img_out, [left_lane_points, right_lane_points], False, [0, 0, 255], thickness=40)
+    cv2.fillPoly(img_out, [np.vstack((left_lane_points, right_lane_points[::-1, :]))], [0, 128, 0])
+
+    # draw radius of curvature and car offset
+    curve_str = 'Curvature: {:.2f}m, {:.2f}m'.format(left_rad, right_rad)
+    cv2.putText(img_out, curve_str, (425, 710), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 255, 255), 2)
+    offset_str = 'Car offset: {:+.2f}m'.format(car_offset)
+    cv2.putText(img_out, offset_str, (425, 670), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 255, 255), 2)
+
+    # warp lanes back onto the road (front view)
+    img_out = cv2.warpPerspective(img_out, trans_mat_inverse, img_out.shape[1::-1], flags=cv2.INTER_LINEAR)
+    img_out = cv2.addWeighted(img_bgr, 1.0, img_out, 0.5, 0.0)
+
+    # plt.imshow(cv2.cvtColor(img_out), cv2.COLOR_BGR2RGB))
+    # plt.show()
+
+    return img_out
+
+
 # load an image
 dir_list = os.listdir(TEST_DIR)
 img = cv2.imread(os.path.join(TEST_DIR, dir_list[3]))
@@ -257,9 +293,6 @@ img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
 # gradient and color thresholding
 img = thresholding(img)
 
-# plt.imshow(img, cmap='gray')
-# plt.show()
-
 # apply perspective transform
 src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
 dst = np.array([[305, img.shape[0]], [1000, img.shape[0]], [1000, 0], [305, 0]], np.float32)
@@ -267,21 +300,17 @@ trans_mat = cv2.getPerspectiveTransform(src, dst)
 trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
 img = cv2.warpPerspective(np.uint8(img), trans_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
 
-# plt.imshow(img, cmap='gray')
-# plt.show()
-
 # find lane pixels
 left_pix, right_pix, nonzero_pix, lane_pix_ind = lane_pixels(img)
 
 # fit a curve through the lane pixels
 left_fit, right_fit = lane_curve_fit(left_pix, right_pix)
 
+# draw lanes and telemetry
+img = draw_telemetry(img_in, left_fit, right_fit)
 
-# TODO: mark lanes graphically in the image
-# Generate x and y values for plotting
-ploty = np.arange(0, img.shape[0])
-left_fitx = np.polyval(left_fit, ploty)
-right_fitx = np.polyval(right_fit, ploty)
+plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+plt.show()
 
 # out_img = np.dstack((img, img, img)) * 255
 # left_lane_inds, right_lane_inds = lane_pix_ind[0], lane_pix_ind[1]
@@ -295,27 +324,3 @@ right_fitx = np.polyval(right_fit, ploty)
 # plt.xlim(0, 1280)
 # plt.ylim(720, 0)
 # plt.show()
-
-
-img_in_warped = cv2.warpPerspective(img_in, trans_mat, img_in.shape[1::-1])
-right_lane_points = np.vstack((right_fitx, ploty)).T.astype(np.int32)
-left_lane_points = np.vstack((left_fitx, ploty)).T.astype(np.int32)
-
-img_in_warped_lanes = img_in_warped.copy()
-cv2.polylines(img_in_warped_lanes, [left_lane_points, right_lane_points], False, [0, 0, 255], thickness=30)
-cv2.fillPoly(img_in_warped_lanes, [left_lane_points, right_lane_points], [0, 128, 0])
-
-fig, ax = plt.subplots(2, 1)
-ax[0].imshow(cv2.cvtColor(img_in_warped, cv2.COLOR_BGR2RGB))
-img_out = cv2.warpPerspective(img_in_warped, trans_mat_inverse, img_in_warped.shape[1::-1])
-img_in_warped_lanes = cv2.warpPerspective(img_in_warped_lanes, trans_mat_inverse, img_in_warped_lanes.shape[1::-1])
-img_out = cv2.addWeighted(img_in, 1.0, img_out, -1.0, 0.0)
-img_out = cv2.addWeighted(img_out, 1.0, img_in_warped_lanes, 1.0, 0.0)
-ax[1].imshow(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB))
-plt.show()
-
-# TODO: compute curvature
-# left_rad, right_rad = radius_of_curvature(left_pix, right_pix, img.shape[0])
-# print('Left ROC: {:.2f} m\nRight ROC: {:.2f} m'.format(left_rad, right_rad))
-
-# TODO: inverse perspective transformation
