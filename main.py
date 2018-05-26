@@ -3,6 +3,7 @@ import argparse
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+from moviepy.editor import VideoFileClip
 
 CALIB_DIR = 'camera_cal'
 OUT_DIR = 'output_images'
@@ -240,7 +241,7 @@ def radius_of_curvature(left_lane_pixels, right_lane_pixels, y0):
     return left_roc, right_roc
 
 
-def draw_telemetry(img_bgr, left_lane_fit, right_lane_fit):
+def lane_markers(img_bgr, left_lane_fit, right_lane_fit, left_pix, right_pix):
     # compute curvature
     left_rad, right_rad = radius_of_curvature(left_pix, right_pix, img_bgr.shape[0])
 
@@ -266,12 +267,39 @@ def draw_telemetry(img_bgr, left_lane_fit, right_lane_fit):
     offset_str = 'Car offset: {:+.2f}m'.format(car_offset)
     cv2.putText(img_out, offset_str, (425, 670), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 255, 255), 2)
 
-    # warp lanes back onto the road (front view)
-    img_out = cv2.warpPerspective(img_out, trans_mat_inverse, img_out.shape[1::-1], flags=cv2.INTER_LINEAR)
-    img_out = cv2.addWeighted(img_bgr, 1.0, img_out, 0.5, 0.0)
-
     # plt.imshow(cv2.cvtColor(img_out), cv2.COLOR_BGR2RGB))
     # plt.show()
+
+    return img_out
+
+
+def pipeline(img_bgr, per_mat, per_mat_inv, cam_mat, dist):
+    # correct for lens distortion
+    img_out = cv2.undistort(img_bgr, cam_mat, dist, None, cam_mat)
+
+    # histogram equalization for contrast enhancement
+    img_out = cv2.cvtColor(img_out, cv2.COLOR_BGR2HSV)
+    img_out[..., 2] = cv2.equalizeHist(img_out[..., 2])
+    img_out = cv2.cvtColor(img_out, cv2.COLOR_HSV2BGR)
+
+    # gradient and color thresholding
+    img_out = thresholding(img_out)
+
+    # apply perspective transform
+    img_out = cv2.warpPerspective(np.uint8(img_out), per_mat, img_out.shape[1::-1], flags=cv2.INTER_LINEAR)
+
+    # find lane pixels
+    left_pix, right_pix, nonzero_pix, lane_pix_ind = lane_pixels(img_out)
+
+    # fit a curve through the lane pixels
+    left_fit, right_fit = lane_curve_fit(left_pix, right_pix)
+
+    # draw lanes and telemetry
+    img_out = lane_markers(img_bgr, left_fit, right_fit, left_pix, right_pix)
+
+    # warp lanes back onto the road (front view)
+    img_out = cv2.warpPerspective(img_out, per_mat_inv, img_out.shape[1::-1], flags=cv2.INTER_LINEAR)
+    img_out = cv2.addWeighted(img_bgr, 1.0, img_out, 0.5, 0.0)
 
     return img_out
 
@@ -279,38 +307,39 @@ def draw_telemetry(img_bgr, left_lane_fit, right_lane_fit):
 # load an image
 dir_list = os.listdir(TEST_DIR)
 img = cv2.imread(os.path.join(TEST_DIR, dir_list[3]))
-img_in = img.copy()
 
-# correct for lens distortion
+# camera matrix and distortion coefficients
 camera_mat, dist_coeff = distortion_coefficients()
-img = cv2.undistort(img, camera_mat, dist_coeff, None, camera_mat)
 
-# histogram equalization for contrast enhancement
-img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-img[..., 2] = cv2.equalizeHist(img[..., 2])
-img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
-
-# gradient and color thresholding
-img = thresholding(img)
-
-# apply perspective transform
+# specify perspective transform
 src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
 dst = np.array([[305, img.shape[0]], [1000, img.shape[0]], [1000, 0], [305, 0]], np.float32)
 trans_mat = cv2.getPerspectiveTransform(src, dst)
 trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
-img = cv2.warpPerspective(np.uint8(img), trans_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
 
-# find lane pixels
-left_pix, right_pix, nonzero_pix, lane_pix_ind = lane_pixels(img)
+# img_out = pipeline(img, trans_mat, trans_mat_inverse, camera_mat, dist_coeff)
 
-# fit a curve through the lane pixels
-left_fit, right_fit = lane_curve_fit(left_pix, right_pix)
 
-# draw lanes and telemetry
-img = draw_telemetry(img_in, left_fit, right_fit)
+def process_frame(img_bgr):
+    # camera matrix and distortion coefficients
+    camera_mat, dist_coeff = distortion_coefficients()
+    # specify perspective transform
+    src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
+    dst = np.array([[305, img_bgr.shape[0]], [1000, img_bgr.shape[0]], [1000, 0], [305, 0]], np.float32)
+    trans_mat = cv2.getPerspectiveTransform(src, dst)
+    trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
 
-plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-plt.show()
+    return pipeline(img_bgr, trans_mat, trans_mat_inverse, camera_mat, dist_coeff)
+
+
+in_clip = VideoFileClip('project_video.mp4').subclip(30)
+# out_clip = in_clip.fx(pipeline, img, trans_mat, trans_mat_inverse, camera_mat, dist_coeff)
+out_clip = in_clip.fl_image(process_frame)
+out_clip.write_videofile('project_video_processed.mp4')
+
+
+# plt.imshow(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB))
+# plt.show()
 
 # out_img = np.dstack((img, img, img)) * 255
 # left_lane_inds, right_lane_inds = lane_pix_ind[0], lane_pix_ind[1]
