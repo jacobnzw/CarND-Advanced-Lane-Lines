@@ -125,6 +125,19 @@ class LaneFinder:
         return mtx, dist
 
     def _thresholding(self, img_bgr):
+        """
+        Thresholding based on color and gradient criteria.
+
+        Parameters
+        ----------
+        img_bgr : numpy.array
+            BGR image
+
+        Returns
+        -------
+        Thresholded image.
+        """
+
         # convert to grayscale
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
@@ -149,7 +162,20 @@ class LaneFinder:
 
         return img_thresh
 
-    def _lane_pixels(self, img_bin):  # TODO: rename to _find_lanes, _lane_search, _lane_find
+    def _lane_search(self, img_bin):
+        """
+        Sliding window lane search.
+
+        Parameters
+        ----------
+        img_bin : numpy.array
+            Binary image after thresholding.
+
+        Returns
+        -------
+        Pixel positions of the left and right lanes.
+        """
+
         histogram = np.sum(img_bin[img_bin.shape[0] // 2:, :], axis=0)
 
         # # Create an output image to draw on and  visualize the result
@@ -221,7 +247,23 @@ class LaneFinder:
 
         return (leftx, lefty), (rightx, righty), (nonzerox, nonzeroy), (left_lane_inds, right_lane_inds)
 
-    def _lane_next(self, img_bin, search_margin=100):  # TODO: rename to _lane_next_frame
+    def _lane_next_frame(self, img_bin, search_margin=100):
+        """
+        Searches for lane pixels in the vicinity of the lane curve from the previous frame.
+
+        Parameters
+        ----------
+        img_bin : numpy.array
+            Binary image (after thresholding).
+        search_margin : int
+            Lane pixels will be searched withing +/- `search_margin`.
+
+        Returns
+        -------
+        Pixel positions of the left and right lanes.
+
+        """
+
         nonzero = img_bin.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
@@ -241,6 +283,23 @@ class LaneFinder:
         return (leftx, lefty), (rightx, righty)
 
     def _lane_curve_fit(self, left_lane_pixels, right_lane_pixels, method='pf_ind'):
+        """
+        Fits a curve through the lane pixel positions.
+
+        Parameters
+        ----------
+        left_lane_pixels : numpy.array
+        right_lane_pixels : numpy.array
+        method : str
+            Default method is to use two independent second-order polynomials as lane models. Other options are rather
+            experimental.
+
+        Returns
+        -------
+        Curve parameters for left and right lanes respectively.
+
+        """
+
         leftx, lefty = left_lane_pixels[0], left_lane_pixels[1]
         rightx, righty = right_lane_pixels[0], right_lane_pixels[1]
 
@@ -274,6 +333,21 @@ class LaneFinder:
         return theta_left, theta_right
 
     def _radius_of_curvature(self, left_lane_pixels, right_lane_pixels, y0):
+        """
+        Radius of curvature at `y0`.
+
+        Parameters
+        ----------
+        left_lane_pixels : numpy.array
+        right_lane_pixels : numpy.array
+        y0 : float
+            Point of evaluation.
+
+        Returns
+        -------
+
+        """
+
         leftx, lefty = left_lane_pixels[0], left_lane_pixels[1]
         rightx, righty = right_lane_pixels[0], right_lane_pixels[1]
 
@@ -288,6 +362,22 @@ class LaneFinder:
         return left_roc, right_roc
 
     def _lane_markers(self, left_pix, right_pix):
+        """
+        Draws lane markers, including estimates of radius of curvature and car offset from the lane center.
+
+        Parameters
+        ----------
+        left_pix : numpy.array
+            Pixel positions of the left lane.
+        right_pix : numpy.array
+            Pixel positions of the right lane.
+
+        Returns
+        -------
+        Marked image.
+
+        """
+
         # compute curvature
         left_rad, right_rad = self._radius_of_curvature(left_pix, right_pix, self.IMG_SHAPE[0])
 
@@ -319,6 +409,20 @@ class LaneFinder:
         return img_out
 
     def _process_frame(self, img_bgr):
+        """
+        Lane finding pipeline.
+
+        Parameters
+        ----------
+        img_bgr : numpy.array
+            Image to process
+
+        Returns
+        -------
+        Processed image with lane markers, lane curvature and car offset drawn.
+
+        """
+
         # correct for lens distortion
         img_out = cv2.undistort(img_bgr, self.camera_mat, self.dist_coeff, None, self.camera_mat)
 
@@ -335,10 +439,10 @@ class LaneFinder:
 
         if not self.lane_found:
             # find lane pixels
-            left_pix, right_pix, nonzero_pix, lane_pix_ind = self._lane_pixels(img_out)
+            left_pix, right_pix, nonzero_pix, lane_pix_ind = self._lane_search(img_out)
         else:
             # use the fit from the previous frame to constrain search for lane pixels in the next frame
-            left_pix, right_pix = self._lane_next(img_out)
+            left_pix, right_pix = self._lane_next_frame(img_out)
 
         # fit a curve through the lane pixels
         self._lane_curve_fit(left_pix, right_pix)
@@ -353,6 +457,21 @@ class LaneFinder:
         return img_out
 
     def process_image(self, infile, outfile=None):
+        """
+        Process a single image. Saves image if `outfile` is provided.
+
+        Parameters
+        ----------
+        infile : str
+            Input file name
+
+        outfile : str or None
+            Output file name
+
+        Returns
+        -------
+
+        """
         img = cv2.imread(infile)
         img_out = self._process_frame(img)
         if outfile is not None:
@@ -361,6 +480,25 @@ class LaneFinder:
         return img_out
 
     def process_video(self, infile, outfile=None, start_time=0, end_time=None):
+        """
+        Process a video file. Saves output to `outfile` if provided.
+
+        Parameters
+        ----------
+        infile : str
+            Input file name.
+
+        outfile : str or None
+            Output file name.
+
+        start_time : int
+        end_time : int or None
+            Both arguments specify which segment of video file to process. Values are in seconds.
+
+        Returns
+        -------
+
+        """
         clip = VideoFileClip(infile).subclip(start_time, end_time)
         out_clip = clip.fl_image(self._process_frame)
         if outfile is not None:
