@@ -80,6 +80,7 @@ class LaneFinder:
 
         # preallocate for speed
         self.img_clean = np.zeros(self.IMG_SHAPE, dtype=np.uint8)
+        self.img_queue = []  # for intermediate results
 
         # variables holding lane model parameters
         self.left_lane_fit = None
@@ -87,6 +88,7 @@ class LaneFinder:
 
         # init flags
         self.lane_found = False
+        self.keep_record = False  # record intermediate results to queue?
 
     def _distortion_coefficients(self):
         """
@@ -160,7 +162,7 @@ class LaneFinder:
         img_thresh = np.logical_or(sobel_x, sobel_y)
         img_thresh = np.logical_or(img_thresh, img_hsv)
 
-        return img_thresh
+        return np.uint8(img_thresh)
 
     def _lane_search(self, img_bin):
         """
@@ -423,19 +425,30 @@ class LaneFinder:
 
         """
 
+        if self.keep_record:
+            self.img_queue.append(img_bgr)
+
         # correct for lens distortion
         img_out = cv2.undistort(img_bgr, self.camera_mat, self.dist_coeff, None, self.camera_mat)
+        if self.keep_record:
+            self.img_queue.append(img_out)
 
         # histogram equalization for contrast enhancement
         img_out = cv2.cvtColor(img_out, cv2.COLOR_BGR2HSV)
         img_out[..., 2] = cv2.equalizeHist(img_out[..., 2])
         img_out = cv2.cvtColor(img_out, cv2.COLOR_HSV2BGR)
+        if self.keep_record:
+            self.img_queue.append(img_out)
 
         # gradient and color thresholding
         img_out = self._thresholding(img_out)
+        if self.keep_record:
+            self.img_queue.append(255*img_out)
 
         # apply perspective transform
-        img_out = cv2.warpPerspective(np.uint8(img_out), self.trans_mat, self.IMG_SHAPE[1::-1], flags=cv2.INTER_LINEAR)
+        img_out = cv2.warpPerspective(img_out, self.trans_mat, self.IMG_SHAPE[1::-1], flags=cv2.INTER_LINEAR)
+        if self.keep_record:
+            self.img_queue.append(255*img_out)
 
         if not self.lane_found:
             # find lane pixels
@@ -449,14 +462,18 @@ class LaneFinder:
 
         # draw lanes and telemetry
         img_out = self._lane_markers(left_pix, right_pix)
+        if self.keep_record:
+            self.img_queue.append(img_out)
 
         # warp lanes back onto the road (front view)
         img_out = cv2.warpPerspective(img_out, self.trans_mat_inverse, self.IMG_SHAPE[1::-1], flags=cv2.INTER_LINEAR)
         img_out = cv2.addWeighted(img_bgr, 1.0, img_out, 0.5, 0.0)
+        if self.keep_record:
+            self.img_queue.append(img_out)
 
         return img_out
 
-    def process_image(self, infile, outfile=None):
+    def process_image(self, infile, outfile=None, record=False):
         """
         Process a single image. Saves image if `outfile` is provided.
 
@@ -472,11 +489,18 @@ class LaneFinder:
         -------
 
         """
+        if record:
+            self.keep_record = True
+
         img = cv2.imread(infile)
         img_out = self._process_frame(img)
+
         if outfile is not None:
             cv2.imwrite(outfile, img_out)
+
         self.lane_found = False
+        self.keep_record = False
+
         return img_out
 
     def process_video(self, infile, outfile=None, start_time=0, end_time=None):
@@ -506,15 +530,27 @@ class LaneFinder:
         return out_clip
 
 
-# load an image
-dir_list = os.listdir(TEST_DIR)
-im_filename = os.path.join(TEST_DIR, dir_list[3])
-
 lf = LaneFinder()
+
+# process all test images
+dir_list = os.listdir(TEST_DIR)
+for file in dir_list:
+    part = file.split('.')
+    in_filepath = os.path.join(TEST_DIR, file)
+    out_filepath = os.path.join(TEST_DIR, part[0] + '_out.' + part[1])
+    lf.process_image(in_filepath, out_filepath)
+
+# process project video
 lf.process_video('project_video.mp4', 'project_video_processed.mp4')
-# result = cv2.cvtColor(lf.process_image(im_filename), cv2.COLOR_BGR2RGB)
-# plt.imshow(result)
-# plt.show()
+
+# pull out intermediate stages for documentation purposes
+dir_list = os.listdir(TEST_DIR)
+lf.process_image(os.path.join(TEST_DIR, dir_list[4]), record=True)
+for i, image in enumerate(lf.img_queue):
+    part = dir_list[3].split('.')
+    filename = part[0] + '_stage_' + str(i) + '.' + part[1]
+    cv2.imwrite(os.path.join('output_images', filename), image)
+
 
 # out_img = np.dstack((img, img, img)) * 255
 # left_lane_inds, right_lane_inds = lane_pix_ind[0], lane_pix_ind[1]
