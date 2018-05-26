@@ -68,8 +68,7 @@ class LaneFinder:
     YM_PER_PIX, XM_PER_PIX = 30 / 720, 3.7 / 700
     IMG_SHAPE = (720, 1280, 3)
 
-    def __init__(self, img_shape):
-        self.img_shape = img_shape
+    def __init__(self):
         # camera matrix and distortion coefficients
         self.camera_mat, self.dist_coeff = self._distortion_coefficients()
 
@@ -78,6 +77,13 @@ class LaneFinder:
         dst = np.array([[305, self.IMG_SHAPE[0]], [1000, self.IMG_SHAPE[0]], [1000, 0], [305, 0]], np.float32)
         self.trans_mat = cv2.getPerspectiveTransform(src, dst)
         self.trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
+
+        # preallocate for speed
+        self.img_clean = np.zeros(self.IMG_SHAPE, dtype=np.uint8)
+
+        # variables holding lane model parameters
+        self.left_lane_fit = None
+        self.right_lane_fit = None
 
         # init flags
         self.lane_found = False
@@ -210,15 +216,18 @@ class LaneFinder:
         rightx = nonzerox[right_lane_inds]
         righty = nonzeroy[right_lane_inds]
 
+        # flag lane as found
+        self.lane_found = True
+
         return (leftx, lefty), (rightx, righty), (nonzerox, nonzeroy), (left_lane_inds, right_lane_inds)
 
-    def _lane_next(self, img_bin, left_lane_fit, right_lane_fit, search_margin=100):  # TODO: rename to _lane_next_frame
+    def _lane_next(self, img_bin, search_margin=100):  # TODO: rename to _lane_next_frame
         nonzero = img_bin.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
 
-        leftx_old = np.polyval(left_lane_fit, nonzeroy)
-        rightx_old = np.polyval(right_lane_fit, nonzeroy)
+        leftx_old = np.polyval(self.left_lane_fit, nonzeroy)
+        rightx_old = np.polyval(self.right_lane_fit, nonzeroy)
 
         left_lane_inds = ((nonzerox > (leftx_old - search_margin)) & (nonzerox < leftx_old + search_margin))
         right_lane_inds = ((nonzerox > (rightx_old - search_margin)) & (nonzerox < (rightx_old + search_margin)))
@@ -254,7 +263,13 @@ class LaneFinder:
             theta_right = theta_left.copy()
             theta_right[-1] += lane_width
         else:
+            theta_left = None
+            theta_right = None
             print('Uknown curve fitting method specified.')
+
+        # save the lane model fit for other functions
+        self.left_lane_fit = theta_left
+        self.right_lane_fit = theta_right
 
         return theta_left, theta_right
 
@@ -272,23 +287,23 @@ class LaneFinder:
 
         return left_roc, right_roc
 
-    def _lane_markers(self, img_bgr, left_lane_fit, right_lane_fit, left_pix, right_pix):
+    def _lane_markers(self, left_pix, right_pix):
         # compute curvature
-        left_rad, right_rad = self._radius_of_curvature(left_pix, right_pix, img_bgr.shape[0])
+        left_rad, right_rad = self._radius_of_curvature(left_pix, right_pix, self.IMG_SHAPE[0])
 
         # Generate x and y values for plotting
-        ploty = np.arange(0, img_bgr.shape[0])
-        left_fitx = np.polyval(left_lane_fit, ploty)
-        right_fitx = np.polyval(right_lane_fit, ploty)
+        ploty = np.arange(0, self.IMG_SHAPE[0])
+        left_fitx = np.polyval(self.left_lane_fit, ploty)
+        right_fitx = np.polyval(self.right_lane_fit, ploty)
 
         # compute car offset
         camera_center = (right_fitx[-1] + left_fitx[-1]) / 2
-        car_offset = (camera_center - img_bgr.shape[1] / 2) * self.XM_PER_PIX
+        car_offset = (camera_center - self.IMG_SHAPE[1] / 2) * self.XM_PER_PIX
 
         right_lane_points = np.vstack((right_fitx, ploty)).T.astype(np.int32)
         left_lane_points = np.vstack((left_fitx, ploty)).T.astype(np.int32)
         # draw detected lanes on a blank image (top view)
-        img_out = np.zeros_like(img_bgr, dtype=np.uint8)
+        img_out = self.img_clean.copy()
         cv2.polylines(img_out, [left_lane_points, right_lane_points], False, [0, 0, 255], thickness=40)
         cv2.fillPoly(img_out, [np.vstack((left_lane_points, right_lane_points[::-1, :]))], [0, 128, 0])
 
@@ -318,21 +333,18 @@ class LaneFinder:
         # apply perspective transform
         img_out = cv2.warpPerspective(np.uint8(img_out), self.trans_mat, self.IMG_SHAPE[1::-1], flags=cv2.INTER_LINEAR)
 
-        # find lane pixels
-        left_pix, right_pix, nonzero_pix, lane_pix_ind = self._lane_pixels(img_out)
-
         if not self.lane_found:
+            # find lane pixels
             left_pix, right_pix, nonzero_pix, lane_pix_ind = self._lane_pixels(img_out)
         else:
-            self._lane_next(img_out, left_fit, right_fit)
-
-        # TODO: make fields self.left_fit, self.right_fit to pass between
+            # use the fit from the previous frame to constrain search for lane pixels in the next frame
+            left_pix, right_pix = self._lane_next(img_out)
 
         # fit a curve through the lane pixels
-        left_fit, right_fit = self._lane_curve_fit(left_pix, right_pix)
+        self._lane_curve_fit(left_pix, right_pix)
 
         # draw lanes and telemetry
-        img_out = self._lane_markers(img_bgr, left_fit, right_fit, left_pix, right_pix)
+        img_out = self._lane_markers(left_pix, right_pix)
 
         # warp lanes back onto the road (front view)
         img_out = cv2.warpPerspective(img_out, self.trans_mat_inverse, self.IMG_SHAPE[1::-1], flags=cv2.INTER_LINEAR)
@@ -340,48 +352,30 @@ class LaneFinder:
 
         return img_out
 
-    def process_image(self, infile, outfile):
+    def process_image(self, infile, outfile=None):
         img = cv2.imread(infile)
-        cv2.imwrite(outfile, self._process_frame(img))
+        img_out = self._process_frame(img)
+        if outfile is not None:
+            cv2.imwrite(outfile, img_out)
+        self.lane_found = False
+        return img_out
 
-    def process_video(self, infile, outfile, start_time=0, end_time=None):
+    def process_video(self, infile, outfile=None, start_time=0, end_time=None):
         clip = VideoFileClip(infile).subclip(start_time, end_time)
-        out_clip = clip.fl_image(self.process_image)
-        out_clip.write_videofile(outfile, audio=False)
+        out_clip = clip.fl_image(self._process_frame)
+        if outfile is not None:
+            out_clip.write_videofile(outfile, audio=False)
+        return out_clip
 
 
 # load an image
 dir_list = os.listdir(TEST_DIR)
-img = cv2.imread(os.path.join(TEST_DIR, dir_list[3]))
+im_filename = os.path.join(TEST_DIR, dir_list[3])
 
-# lf = LaneFinder().process_video('project_video.mp4')
 lf = LaneFinder()
-result = cv2.cvtColor(lf.process_image(img), cv2.COLOR_BGR2RGB)
-plt.imshow(result)
-plt.show()
-
-# img_out = pipeline(img, trans_mat, trans_mat_inverse, camera_mat, dist_coeff)
-
-
-# def process_frame(img_bgr):
-#     # camera matrix and distortion coefficients
-#     camera_mat, dist_coeff = distortion_coefficients()
-#     # specify perspective transform
-#     src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
-#     dst = np.array([[305, img_bgr.shape[0]], [1000, img_bgr.shape[0]], [1000, 0], [305, 0]], np.float32)
-#     trans_mat = cv2.getPerspectiveTransform(src, dst)
-#     trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
-#
-#     return pipeline(img_bgr, trans_mat, trans_mat_inverse, camera_mat, dist_coeff)
-#
-#
-# in_clip = VideoFileClip('project_video.mp4').subclip(30)
-# # out_clip = in_clip.fx(pipeline, img, trans_mat, trans_mat_inverse, camera_mat, dist_coeff)
-# out_clip = in_clip.fl_image(process_frame)
-# out_clip.write_videofile('project_video_processed.mp4')
-
-
-# plt.imshow(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB))
+lf.process_video('project_video.mp4', 'project_video_processed.mp4')
+# result = cv2.cvtColor(lf.process_image(im_filename), cv2.COLOR_BGR2RGB)
+# plt.imshow(result)
 # plt.show()
 
 # out_img = np.dstack((img, img, img)) * 255
