@@ -16,7 +16,8 @@ class LaneFinder:
     IMG_SHAPE = (720, 1280, 3)
 
     def __init__(self):
-        git
+        # camera matrix and distortion coefficients
+        self.camera_mat, self.dist_coeff = self._distortion_coefficients()
 
         # specify perspective transform
         src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
