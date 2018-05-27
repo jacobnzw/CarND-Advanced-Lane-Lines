@@ -1,4 +1,4 @@
-## Advanced Lane Finding Project
+# Advanced Lane Finding Project
 
 The goals / steps of this project are the following:
 
@@ -16,8 +16,9 @@ The goals / steps of this project are the following:
 [undistort_comparison]: ./examples/undistort_output.jpg "Undistorted"
 [perspective_transform]: ./examples/perspective_transform.jpg "Perspective transform"
 [contrast_enhancement]: ./examples/contrast_enhancement.jpg "Contrast enhancement"
-[image2]: ./test_images/test1.jpg "Road Transformed"
-[image3]: ./examples/binary_combo_example.jpg "Binary Example"
+[thresholded]: ./output_images/test_stage_3.jpg "Thresholded"
+[markers]: ./output_images/test_stage_5.jpg "Markers"
+[final]: ./output_images/test_stage_6.jpg "Final result"
 [image4]: ./examples/warped_straight_lines.jpg "Warp Example"
 [image5]: ./examples/color_fit_lines.jpg "Fit Visual"
 [image6]: ./examples/example_output.jpg "Output"
@@ -26,7 +27,7 @@ The goals / steps of this project are the following:
 
 ---
 
-### Preliminary Note on Python Implementation
+## Preliminary Note on Python Implementation
 
 The whole computer vision pipeline is structured into a class `LaneFinder` with the following method signatures
 ```python
@@ -51,9 +52,9 @@ class LaneFinder:
 The pipeline itself is defined in the private method `_process_frame()`. The two public method `process_image()` and `process_video()` do as their names suggest - processing of a single image file and processing of an entire video file frame by frame. Refer to the docstrings in the code for more detailed description of each method.
 
 
-### Image Processing Pipeline
+## Image Processing Pipeline
 
-#### Camera Calibration: Correcting for Lens Distortion
+### Camera Calibration: Correcting for Lens Distortion
 Before doing any image processing, we need to make sure that the camera lens distortion is corrected. 
 
 The camera matrix and the distortion coefficients necessary for the correction are computed by the `_distortion_coefficients()`, which is called only once in the `__init__()`. The camera matrix and distortion coefficients are stored in the variables `self.camera_mat` and `self.dist_coeff` respectively for later use by the `_process_frame()`. Both quantities are computed by the `cv2.calibrateCamera()` function on the basis of image points and object points.
@@ -65,7 +66,7 @@ Below we can see the distortion correction applied to the calibration and test i
 
 ![alt text][undistort_comparison]
 
-#### Contrast Enhancement
+### Contrast Enhancement
 In order to get the edges of the lane lines to pop, I employed the histogram equalization `cv2.equalizeHist()`. I first converted the BGR image in to the HSV space, then applied the equalization only on the V (value) channel and finally converted back to BGR space.
 
 ```python
@@ -80,15 +81,42 @@ The above code snippet is from the `_process_frame()` method. The following figu
 ![contrast enchancement][contrast_enhancement]
 
 
-#### Thresholding based on color and gradient
-***Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.***
+### Thresholding based on color and gradient
 
 I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
 
-![alt text][image3]
+Here is a code snippet performing thresholding
+
+```python
+# convert to grayscale
+gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+
+# compute gradients in x and y directions
+sobel_x = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 1, 0))
+sobel_y = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 0, 1))
+# scale to 0 - 255 and unsigned 8-bit integer type
+sobel_x = np.uint8(255 * sobel_x / np.max(sobel_x))
+sobel_y = np.uint8(255 * sobel_y / np.max(sobel_y))
+
+# threshold in gradient space
+sobel_x = np.logical_and(sobel_x >= 100, sobel_x <= 255)
+sobel_y = np.logical_and(sobel_y >= 100, sobel_y <= 255)
+
+# threshold in HSV space
+img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+img_hsv = img_hsv[..., 2] > 245
+# img_hsv = img_hsv[..., 1] > 120
+
+# combine thresholds
+img_thresh = np.logical_or(sobel_x, sobel_y)
+img_thresh = np.logical_or(img_thresh, img_hsv)
+```
+I used gradients in both directions with magnitude between 100 and 255 as well as the V channel with value above 245 for separating out the lane lines. The result is seen in the following figure.
+
+![binary][thresholded]
 
 
-#### Perspective transform
+### Perspective transform
 The perspective transform was specified by the following source and destination points:
 
 | Source        | Destination   | 
@@ -100,33 +128,50 @@ The perspective transform was specified by the following source and destination 
 
 The code specifying the points can be found in the `__init__()` method, where the resulting transformation matrix and its inverse are stored in `self.trans_mat` and `self.trans_mat_inverse` variables.
 
+```python
+# specify perspective transform
+src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
+dst = np.array([[305, self.IMG_SHAPE[0]], [1000, self.IMG_SHAPE[0]], [1000, 0], [305, 0]], np.float32)
+self.trans_mat = cv2.getPerspectiveTransform(src, dst)
+self.trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
+```
+
 I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
 ![Perspective transform][perspective_transform]
 
 The thin green line in the right panel is the rectangle specified by the destination (`dst`) points. The red line is the polygon in the original front-view image after the perspective transform. We can see that both of these lines match up with the lane lines, which indicates the transform is performed correctly.
 
-***Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?***
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+### Curve Fitting
+In order to fit a model of the lane lines, we first have to indetify which pixels belong to the lane lines. I summed the bottom half of the binary thresholded image to obtain a histogram, in which I searched for arguments of the maxima to locate the x-coordinate of the left and right lane lines. From there I proceeded with the windowed search suggested in the learning materials. This functionality is implemented in `_lane_search()`. To find lane pixels in the next frame I exploited knowledge of their position from the previous frame, which helped speed up processing of the video sequence. This functionality is implemented in `_lane_next_frame()`.
 
-![alt text][image5]
+Finally, I fitted a second degree polynomial to the left and right lane pixels. The fitted curves are depicted in the following figure. The curve fitting is implemented in `_lane_curve_fit()`.
 
-***Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.***
+![curve fit][curve_fit]
 
-I did this in lines # through # in my code in `my_other_file.py`
+Given a second-order polynomial model of the lane line $p(y; \mathbf{\theta}) = \theta_2y^2 + \theta_1y + \theta_0$, the radius of curvature evaluated at $y_0$ is given by
+$$
+  R_{c}(y_0) = \frac{\left(1 + (2\theta_2y_0 + \theta_1)^2\right)^{3/2}}{\left| 2\theta_2 \right|}
+$$
+This equation is implemented in `_radius_of_curvature()`.
 
-***Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.***
+Assuming the camera is mounted exactly in the center of the car, the center of the lane should be in the middle of the image (horizontally). I computed the position of the car as an average horizontal coordinate of the lane lines as measured at the bottom of the image. The offset of the vehicle is a difference of these two quantities.
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
+All of the estimates and lane markers were drawn on the image using the function `_lane_markers()`, resulting in the following.
 
-![alt text][image6]
+![][markers]
+
+With the markers drawn on blank image, the last remaining step is to perform the inverse perspective transform of the image with markers back onto the road (front view) and fuse it in with the original using `cv2.addWeighted()`.
+I implemented this step in final lines of the `_process_frame()` function.  
+
+Here is an example of my result on a test image:
+
+![alt text][final]
 
 ---
 
 ### Pipeline (video)
-
-***Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).***
 
 
 Here's a [link to my video result][processed_video]

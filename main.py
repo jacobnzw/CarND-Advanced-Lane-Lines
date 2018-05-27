@@ -16,8 +16,7 @@ class LaneFinder:
     IMG_SHAPE = (720, 1280, 3)
 
     def __init__(self):
-        # camera matrix and distortion coefficients
-        self.camera_mat, self.dist_coeff = self._distortion_coefficients()
+        git
 
         # specify perspective transform
         src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
@@ -104,6 +103,7 @@ class LaneFinder:
         # threshold in HSV space
         img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
         img_hsv = img_hsv[..., 2] > 245
+        # img_hsv = img_hsv[..., 1] > 120
 
         # combine thresholds
         img_thresh = np.logical_or(sobel_x, sobel_y)
@@ -501,7 +501,10 @@ def perspective_transform_plot():
     plt.show()
 
 
-def thresholding_plot(img):
+def thresholding_plot():
+    dir_list = os.listdir(TEST_DIR)
+    img = cv2.imread(os.path.join(TEST_DIR, dir_list[-2]))
+    # convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     # compute gradients in x and y directions
     sobel_x = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 1, 0))
@@ -509,15 +512,21 @@ def thresholding_plot(img):
     # scale to 0 - 255 and unsigned 8-bit integer type
     sobel_x = np.uint8(255 * sobel_x / np.max(sobel_x))
     sobel_y = np.uint8(255 * sobel_y / np.max(sobel_y))
-
+    # gradient-based thresholding
     sobel_x = np.logical_and(sobel_x >= 100, sobel_x <= 255)
     sobel_y = np.logical_and(sobel_y >= 100, sobel_y <= 255)
-
-    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     img_thresh = np.logical_or(sobel_x, sobel_y)
+
+    # color-based thresholding
+    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     img_thresh = np.logical_or(img_thresh, img_hsv[..., 2] > 245)
 
-    plt.imshow(img_thresh, cmap='gray')
+    fig, ax = plt.subplots(1, 2)
+    ax[0].set_title('Before')
+    ax[0].imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    ax[1].set_title('After')
+    ax[1].imshow(img_thresh, cmap='gray')
+    plt.tight_layout()
     plt.show()
 
 
@@ -548,11 +557,13 @@ def distortion_compar_plot():
 
 def histogram_equalization_plot():
     dir_list = os.listdir(TEST_DIR)
-    img_bgr = cv2.imread(os.path.join(TEST_DIR, dir_list[4]))
+    img_bgr = cv2.imread(os.path.join(TEST_DIR, dir_list[-2]))
     # histogram equalization for contrast enhancement
     img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    # img_hsv[..., 1] = cv2.equalizeHist(img_hsv[..., 1])
     img_hsv[..., 2] = cv2.equalizeHist(img_hsv[..., 2])
     img_bgr_eq = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
+
     # plot differences
     fig, ax = plt.subplots(1, 2)
     ax[0].set_title('Before')
@@ -562,6 +573,8 @@ def histogram_equalization_plot():
     plt.tight_layout()
     plt.show()
 
+
+lf = LaneFinder()
 # # process all test images
 # dir_list = os.listdir(TEST_DIR)
 # for file in dir_list:
@@ -573,17 +586,28 @@ def histogram_equalization_plot():
 # # process project video
 # lf.process_video('project_video.mp4', 'project_video_processed.mp4')
 #
-# # pull out intermediate stages for documentation purposes
-# dir_list = os.listdir(TEST_DIR)
-# lf.process_image(os.path.join(TEST_DIR, dir_list[4]), record=True)
-# for i, image in enumerate(lf.img_queue):
-#     part = dir_list[3].split('.')
-#     filename = part[0] + '_stage_' + str(i) + '.' + part[1]
-#     cv2.imwrite(os.path.join('output_images', filename), image)
+# pull out intermediate stages for documentation purposes
+dir_list = os.listdir(TEST_DIR)
+lf.process_image(os.path.join(TEST_DIR, dir_list[8]), record=True)
+for i, image in enumerate(lf.img_queue):
+    part = dir_list[3].split('.')
+    filename = 'test_stage_' + str(i) + '.' + part[1]
+    cv2.imwrite(os.path.join('output_images', filename), image)
 
 # perspective_transform_plot()
 
-histogram_equalization_plot()
+# histogram_equalization_plot()
+
+# thresholding_plot()
+
+# plot differences
+# fig, ax = plt.subplots(1, 2)
+# ax[0].set_title('Before')
+# ax[0].imshow(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
+# ax[1].set_title('After')
+# ax[1].imshow(cv2.cvtColor(img_bgr_eq, cv2.COLOR_BGR2RGB))
+# plt.tight_layout()
+# plt.show()
 
 # out_img = np.dstack((img, img, img)) * 255
 # left_lane_inds, right_lane_inds = lane_pix_ind[0], lane_pix_ind[1]
