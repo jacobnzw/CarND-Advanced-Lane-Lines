@@ -9,59 +9,6 @@ OUT_DIR = 'output_images'
 TEST_DIR = 'test_images'
 
 
-def undistortion_test():
-    # compute distortion coefficients and the camera matrix
-    camera_mat, dist_coeff = distortion_coefficients()
-    # read in a calibration image
-    dir_list = os.listdir(CALIB_DIR)
-    img = cv2.imread(os.path.join(CALIB_DIR, dir_list[11]))
-    undistorted = cv2.undistort(img, camera_mat, dist_coeff, None, camera_mat)
-    # show the difference
-    fig, ax = plt.subplots(1, 2)
-    ax[0].imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    ax[1].imshow(cv2.cvtColor(undistorted, cv2.COLOR_BGR2RGB))
-    plt.show()
-
-
-def perspective_transform_test(img_bgr):
-    # points in the image (e.g. corners of chessboard, vertices of a rectangle marking the lane etc.)
-    src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
-    # points with desired coordinates in the destination image
-    dst = np.array([[305, img_bgr.shape[0]], [1000, img_bgr.shape[0]], [1000, 0], [305, 0]], np.float32)
-    trans_mat = cv2.getPerspectiveTransform(src, dst)
-    # trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
-    cv2.polylines(img_bgr, [src.astype(np.int32)], True, [0, 0, 255], thickness=2)
-    warped = cv2.warpPerspective(img_bgr, trans_mat, img_bgr.shape[1::-1])
-
-    cv2.polylines(img_bgr, [src.astype(np.int32)], True, [0, 0, 255], thickness=2)
-    cv2.polylines(warped, [dst.astype(np.int32)], True, [0, 255, 0], thickness=4)
-
-    fig, ax = plt.subplots(2, 1)
-    ax[0].imshow(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
-    ax[1].imshow(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
-    plt.show()
-
-
-def thresholding_test(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    # compute gradients in x and y directions
-    sobel_x = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 1, 0))
-    sobel_y = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 0, 1))
-    # scale to 0 - 255 and unsigned 8-bit integer type
-    sobel_x = np.uint8(255 * sobel_x / np.max(sobel_x))
-    sobel_y = np.uint8(255 * sobel_y / np.max(sobel_y))
-
-    sobel_x = np.logical_and(sobel_x >= 100, sobel_x <= 255)
-    sobel_y = np.logical_and(sobel_y >= 100, sobel_y <= 255)
-
-    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    img_thresh = np.logical_or(sobel_x, sobel_y)
-    img_thresh = np.logical_or(img_thresh, img_hsv[..., 2] > 245)
-
-    plt.imshow(img_thresh, cmap='gray')
-    plt.show()
-
-
 class LaneFinder:
     CALIB_DIR = 'camera_cal'
     CHESSBOARD_PATTERN_SIZE = (9, 6)
@@ -530,27 +477,113 @@ class LaneFinder:
         return out_clip
 
 
-lf = LaneFinder()
+def perspective_transform_plot():
+    dir_list = os.listdir(TEST_DIR)
+    img_bgr = cv2.imread(os.path.join(TEST_DIR, dir_list[0]))
+    # points in the image (e.g. corners of chessboard, vertices of a rectangle marking the lane etc.)
+    src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
+    # points with desired coordinates in the destination image
+    dst = np.array([[305, img_bgr.shape[0]], [1000, img_bgr.shape[0]], [1000, 0], [305, 0]], np.float32)
+    trans_mat = cv2.getPerspectiveTransform(src, dst)
+    # trans_mat_inverse = cv2.getPerspectiveTransform(dst, src)
+    cv2.polylines(img_bgr, [src.astype(np.int32)], True, [0, 0, 255], thickness=2)
+    warped = cv2.warpPerspective(img_bgr, trans_mat, img_bgr.shape[1::-1])
 
-# process all test images
-dir_list = os.listdir(TEST_DIR)
-for file in dir_list:
-    part = file.split('.')
-    in_filepath = os.path.join(TEST_DIR, file)
-    out_filepath = os.path.join(TEST_DIR, part[0] + '_out.' + part[1])
-    lf.process_image(in_filepath, out_filepath)
+    cv2.polylines(img_bgr, [src.astype(np.int32)], True, [0, 0, 255], thickness=2)
+    cv2.polylines(warped, [dst.astype(np.int32)], True, [0, 255, 0], thickness=4)
 
-# process project video
-lf.process_video('project_video.mp4', 'project_video_processed.mp4')
+    fig, ax = plt.subplots(1, 2)
+    ax[0].set_title('Front view')
+    ax[0].imshow(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
+    ax[1].set_title('Top view')
+    ax[1].imshow(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
+    plt.tight_layout()
+    plt.show()
 
-# pull out intermediate stages for documentation purposes
-dir_list = os.listdir(TEST_DIR)
-lf.process_image(os.path.join(TEST_DIR, dir_list[4]), record=True)
-for i, image in enumerate(lf.img_queue):
-    part = dir_list[3].split('.')
-    filename = part[0] + '_stage_' + str(i) + '.' + part[1]
-    cv2.imwrite(os.path.join('output_images', filename), image)
 
+def thresholding_plot(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # compute gradients in x and y directions
+    sobel_x = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 1, 0))
+    sobel_y = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 0, 1))
+    # scale to 0 - 255 and unsigned 8-bit integer type
+    sobel_x = np.uint8(255 * sobel_x / np.max(sobel_x))
+    sobel_y = np.uint8(255 * sobel_y / np.max(sobel_y))
+
+    sobel_x = np.logical_and(sobel_x >= 100, sobel_x <= 255)
+    sobel_y = np.logical_and(sobel_y >= 100, sobel_y <= 255)
+
+    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    img_thresh = np.logical_or(sobel_x, sobel_y)
+    img_thresh = np.logical_or(img_thresh, img_hsv[..., 2] > 245)
+
+    plt.imshow(img_thresh, cmap='gray')
+    plt.show()
+
+
+def distortion_compar_plot():
+    # compute distortion coefficients and camera matrix
+    lf = LaneFinder()
+    cmat, dist = lf._distortion_coefficients()
+    # load and undistort one calibration and one test image
+    calib_dir_list = os.listdir(lf.CALIB_DIR)
+    im_calib_pre = cv2.imread(os.path.join(lf.CALIB_DIR, calib_dir_list[0]))
+    im_calib_post = cv2.undistort(im_calib_pre, cmat, dist, None, cmat)
+    test_dir_list = os.listdir(TEST_DIR)
+    im_test_pre = cv2.imread(os.path.join(TEST_DIR, test_dir_list[4]))
+    im_test_post = cv2.undistort(im_test_pre, cmat, dist, None, cmat)
+    # show difference in pre and post calibration
+    fig, ax = plt.subplots(2, 2)
+    ax[0, 0].set_title('Before')
+    ax[0, 0].imshow(cv2.cvtColor(im_calib_pre, cv2.COLOR_BGR2RGB))
+    ax[0, 1].set_title('After')
+    ax[0, 1].imshow(cv2.cvtColor(im_calib_post, cv2.COLOR_BGR2RGB))
+    ax[1, 0].set_title('Before')
+    ax[1, 0].imshow(cv2.cvtColor(im_test_pre, cv2.COLOR_BGR2RGB))
+    ax[1, 1].set_title('After')
+    ax[1, 1].imshow(cv2.cvtColor(im_test_post, cv2.COLOR_BGR2RGB))
+    plt.tight_layout()
+    plt.show()
+
+
+def histogram_equalization_plot():
+    dir_list = os.listdir(TEST_DIR)
+    img_bgr = cv2.imread(os.path.join(TEST_DIR, dir_list[4]))
+    # histogram equalization for contrast enhancement
+    img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    img_hsv[..., 2] = cv2.equalizeHist(img_hsv[..., 2])
+    img_bgr_eq = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
+    # plot differences
+    fig, ax = plt.subplots(1, 2)
+    ax[0].set_title('Before')
+    ax[0].imshow(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
+    ax[1].set_title('After')
+    ax[1].imshow(cv2.cvtColor(img_bgr_eq, cv2.COLOR_BGR2RGB))
+    plt.tight_layout()
+    plt.show()
+
+# # process all test images
+# dir_list = os.listdir(TEST_DIR)
+# for file in dir_list:
+#     part = file.split('.')
+#     in_filepath = os.path.join(TEST_DIR, file)
+#     out_filepath = os.path.join(TEST_DIR, part[0] + '_out.' + part[1])
+#     lf.process_image(in_filepath, out_filepath)
+#
+# # process project video
+# lf.process_video('project_video.mp4', 'project_video_processed.mp4')
+#
+# # pull out intermediate stages for documentation purposes
+# dir_list = os.listdir(TEST_DIR)
+# lf.process_image(os.path.join(TEST_DIR, dir_list[4]), record=True)
+# for i, image in enumerate(lf.img_queue):
+#     part = dir_list[3].split('.')
+#     filename = part[0] + '_stage_' + str(i) + '.' + part[1]
+#     cv2.imwrite(os.path.join('output_images', filename), image)
+
+# perspective_transform_plot()
+
+histogram_equalization_plot()
 
 # out_img = np.dstack((img, img, img)) * 255
 # left_lane_inds, right_lane_inds = lane_pix_ind[0], lane_pix_ind[1]
