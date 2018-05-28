@@ -1,5 +1,4 @@
 import os
-import argparse
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
@@ -433,6 +432,10 @@ class LaneFinder:
         outfile : str or None
             Output file name
 
+        record : bool
+            Record results of intermediate stages of the pipeline into self.img_queue. Mostly for visualization
+            purposes.
+
         Returns
         -------
 
@@ -480,7 +483,7 @@ class LaneFinder:
 
 def perspective_transform_plot():
     dir_list = os.listdir(TEST_DIR)
-    img_bgr = cv2.imread(os.path.join(TEST_DIR, dir_list[0]))
+    img_bgr = cv2.imread(os.path.join(TEST_DIR, dir_list[-2]))
     # points in the image (e.g. corners of chessboard, vertices of a rectangle marking the lane etc.)
     src = np.array([[305, 650], [1000, 650], [685, 450], [595, 450]], np.float32)
     # points with desired coordinates in the destination image
@@ -576,49 +579,29 @@ def histogram_equalization_plot():
 
 
 lf = LaneFinder()
-# # process all test images
-# dir_list = os.listdir(TEST_DIR)
-# for file in dir_list:
-#     part = file.split('.')
-#     in_filepath = os.path.join(TEST_DIR, file)
-#     out_filepath = os.path.join(TEST_DIR, part[0] + '_out.' + part[1])
-#     lf.process_image(in_filepath, out_filepath)
-#
-# # process project video
-# lf.process_video('project_video.mp4', 'project_video_processed.mp4')
-#
-# pull out intermediate stages for documentation purposes
+# process all test images
 dir_list = os.listdir(TEST_DIR)
-lf.process_image(os.path.join(TEST_DIR, dir_list[8]), record=True)
-for i, image in enumerate(lf.img_queue):
-    part = dir_list[3].split('.')
-    filename = 'test_stage_' + str(i) + '.' + part[1]
-    cv2.imwrite(os.path.join('output_images', filename), image)
+for file in dir_list:
+    part = file.split('.')
+    in_filepath = os.path.join(TEST_DIR, file)
+    out_filepath = os.path.join(TEST_DIR, part[0] + '_out.' + part[1])
+    lf.process_image(in_filepath, out_filepath)
+
+# process project video
+lf.process_video('project_video.mp4', 'project_video_processed.mp4')
+
+# pull out intermediate stages for documentation purposes
+# dir_list = os.listdir(TEST_DIR)
+# lf.process_image(os.path.join(TEST_DIR, dir_list[-2]), record=True)
+# plt.imshow(lf.img_queue[4])
+# plt.show()
+# for i, image in enumerate(lf.img_queue):
+#     part = dir_list[3].split('.')
+#     filename = 'test_stage_' + str(i) + '.' + part[1]
+#     cv2.imwrite(os.path.join('output_images', filename), image)
 
 # perspective_transform_plot()
 
 # histogram_equalization_plot()
 
 # thresholding_plot()
-
-# plot differences
-# fig, ax = plt.subplots(1, 2)
-# ax[0].set_title('Before')
-# ax[0].imshow(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
-# ax[1].set_title('After')
-# ax[1].imshow(cv2.cvtColor(img_bgr_eq, cv2.COLOR_BGR2RGB))
-# plt.tight_layout()
-# plt.show()
-
-# out_img = np.dstack((img, img, img)) * 255
-# left_lane_inds, right_lane_inds = lane_pix_ind[0], lane_pix_ind[1]
-# nonzerox, nonzeroy = nonzero_pix[0], nonzero_pix[1]
-# out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-# out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
-# plt.imshow(out_img)
-# plt.plot(left_fitx, ploty, color='yellow')
-# plt.plot(right_fitx, ploty, color='yellow')
-# plt.plot(right_fitx, ploty, color='green', lw=20, alpha=0.5)
-# plt.xlim(0, 1280)
-# plt.ylim(720, 0)
-# plt.show()

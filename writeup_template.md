@@ -147,14 +147,16 @@ The thin green line in the right panel is the rectangle specified by the destina
 ### Curve Fitting
 In order to fit a model of the lane lines, we first have to indetify which pixels belong to the lane lines. I summed the bottom half of the binary thresholded image to obtain a histogram, in which I searched for arguments of the maxima to locate the x-coordinate of the left and right lane lines. From there I proceeded with the windowed search suggested in the learning materials. This functionality is implemented in `_lane_search()`. To find lane pixels in the next frame I exploited knowledge of their position from the previous frame, which helped speed up processing of the video sequence. This functionality is implemented in `_lane_next_frame()`.
 
-Finally, I fitted a second degree polynomial to the left and right lane pixels. The fitted curves are depicted in the following figure. The curve fitting is implemented in `_lane_curve_fit()`.
+Finally, I fitted a second-degree polynomial to the left and right lane pixels. The fitted curves are depicted in the following figure. The curve fitting is implemented in `_lane_curve_fit()`.
 
 ![curve fit][curve_fit]
 
 Given a second-order polynomial model of the lane line $p(y; \mathbf{\theta}) = \theta_2y^2 + \theta_1y + \theta_0$, the radius of curvature evaluated at $y_0$ is given by
+
 $$
   R_{c}(y_0) = \frac{\left(1 + (2\theta_2y_0 + \theta_1)^2\right)^{3/2}}{\left| 2\theta_2 \right|}
 $$
+
 This equation is implemented in `_radius_of_curvature()`.
 
 Assuming the camera is mounted exactly in the center of the car, the center of the lane should be in the middle of the image (horizontally). I computed the position of the car as an average horizontal coordinate of the lane lines as measured at the bottom of the image. The offset of the vehicle is a difference of these two quantities.
@@ -173,14 +175,11 @@ Here is an example of my result on a test image:
 ---
 
 ### Pipeline (video)
-
-
 Here's a [link to my video result][processed_video]
 
 ---
 
 ### Discussion
+Besides getting the perspective transform correct, the crucial phase in the whole pipeline is undoubtedly the thresholding. In the test image `test_6.jpg` the left lane fit is a bit off, but in the video sequence it is apparent that this is just a momentary jitter. 
 
-***Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust? Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.***
-
-Besides getting the perspective transform correct, the crucial phase in the whole pipeline is undoubtedly the thresholding.
+The solution would be likely to modify the region of interest to slightly decreasee the range of the draw lane marker. Additionally, further tweaking of the thresholds would improve the result. One could also consider doing a weighted average (low-pass filter) of the results from the previous frame to smooth out the jitter.
