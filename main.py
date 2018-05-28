@@ -113,7 +113,7 @@ class LaneFinder:
 
     def _lane_search(self, img_bin):
         """
-        Sliding window lane search.
+        Sliding window lane search from Udacity.
 
         Parameters
         ----------
