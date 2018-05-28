@@ -16,6 +16,7 @@ The goals / steps of this project are the following:
 [undistort_comparison]: ./examples/undistort_output.jpg "Undistorted"
 [perspective_transform]: ./examples/perspective_transform.jpg "Perspective transform"
 [contrast_enhancement]: ./examples/contrast_enhancement.jpg "Contrast enhancement"
+[curve_fit]: ./examples/binary_curve_fit.jpg "Contrast enhancement"
 [thresholded]: ./output_images/test_stage_3.jpg "Thresholded"
 [markers]: ./output_images/test_stage_5.jpg "Markers"
 [final]: ./output_images/test_stage_6.jpg "Final result"
